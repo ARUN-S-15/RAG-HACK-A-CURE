@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: medical-rag-system
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt && python ingest.py
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: USE_LOCAL_MODEL
+        value: true
+      - key: PORT
+        fromService: 
+          type: web
+          name: medical-rag-system
+          property: port
