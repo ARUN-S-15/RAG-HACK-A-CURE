@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -16,8 +16,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
+# Build vector store with placeholder data
+RUN python ingest.py || echo "Warning: Vector store build failed, will use runtime build"
+
 # Expose port
-EXPOSE 8000
+EXPOSE 10000
+
+# Set environment variable for port
+ENV PORT=10000
 
 # Command to run the application
 CMD ["python", "app.py"]

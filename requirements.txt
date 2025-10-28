@@ -1,22 +1,31 @@
+# ============================================
+# MedInSight - RAG API Requirements
+# Hack-A-Cure Submission
+# ============================================
+
+# FastAPI Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# PDF processing
-PyPDF2==3.0.1
-pypdf==3.17.1
+# PDF Processing - Multiple options for robustness
+PyMuPDF==1.23.8  # Recommended - best for tables and diagrams
+pdfplumber==0.10.3  # Alternative PDF processor
+PyPDF2==3.0.1  # Fallback PDF processor
 
-# Vector store and embeddings
-faiss-cpu==1.7.4
-sentence-transformers==2.2.2
+# Vector Store and Embeddings
+faiss-cpu==1.7.4  # FAISS for similarity search
+sentence-transformers==2.2.2  # Fallback embedding model
 
-# LLM integration
-openai==1.3.5
-langchain==0.1.0
-langchain-community==0.0.10
+# OpenAI Integration (Required for GPT-4 and embeddings)
+openai==0.28.1  # Using 0.28.x for compatibility
 
-# Additional utilities
-python-dotenv==1.0.0
-numpy==1.24.3
+# Utilities
+python-dotenv==1.0.0  # Environment variable management
+numpy==1.24.3  # Numerical operations
+
+# Additional dependencies
+typing-extensions==4.8.0
+

@@ -1,20 +1,21 @@
 """
-FastAPI application for RAG system
+FastAPI Application for MedInSight - AI Textbook Medical Reasoning using RAG
+Hack-A-Cure Submission
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from typing import List
 import uvicorn
 import os
-
-from rag_engine import RAGEngine
+import sys
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Medical RAG System API",
-    description="Retrieval-Augmented Generation system for medical documents",
+    title="MedInSight - Medical RAG API",
+    description="AI Textbook Medical Reasoning using RAG for Hack-A-Cure",
     version="1.0.0"
 )
 
@@ -27,125 +28,205 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize RAG engine
-rag_engine = None
+# Global RAG pipeline instance
+rag_pipeline = None
 
 
-# Request/Response models
+# ============ Request/Response Models ============
+
 class QueryRequest(BaseModel):
-    question: str
-    k: Optional[int] = 5
+    """Request model for /query endpoint"""
+    query: str = Field(..., description="Medical question to answer")
+    top_k: int = Field(default=5, description="Number of contexts to retrieve", ge=1, le=20)
     
     class Config:
         json_schema_extra = {
             "example": {
-                "question": "What are the symptoms of heart disease?",
-                "k": 5
+                "query": "What is diabetes?",
+                "top_k": 5
             }
         }
 
 
-class Source(BaseModel):
-    source: str
-    relevance: float
-
-
 class QueryResponse(BaseModel):
-    answer: str
-    sources: List[Source]
-    model: str
+    """Response model for /query endpoint - EXACT format for Hack-A-Cure"""
+    answer: str = Field(..., description="Concise, medically accurate response")
+    contexts: List[str] = Field(..., description="Array of retrieved text snippets")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "answer": "Diabetes is a chronic condition characterized by high blood sugar levels.",
+                "contexts": [
+                    "Diabetes is a chronic metabolic disease...",
+                    "The hallmark of diabetes is elevated glucose levels..."
+                ]
+            }
+        }
 
 
 class HealthResponse(BaseModel):
+    """Response model for /health endpoint"""
     status: str
-    message: str
-    vector_store_loaded: bool
 
+
+# ============ Startup Event ============
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize RAG engine on startup."""
-    global rag_engine
-    print("🚀 Starting up RAG system...")
+    """Initialize RAG pipeline on startup"""
+    global rag_pipeline
+    
+    print("=" * 60)
+    print("🚀 MedInSight - Hack-A-Cure RAG System Starting...")
+    print("=" * 60)
+    
     try:
-        rag_engine = RAGEngine()
-        print("✅ RAG engine initialized successfully")
+        # Import here to avoid circular imports
+        from ingest import VectorStore
+        from rag_pipeline import RAGPipeline
+        
+        # Load vector store
+        print("📚 Loading vector store...")
+        vector_store = VectorStore()
+        
+        if not vector_store.load():
+            print("⚠️  WARNING: Vector store not found!")
+            print("   Please run: python ingest.py")
+            print("   The API will start but /query will fail until vector store is built.")
+            return
+        
+        # Initialize RAG pipeline
+        print("🤖 Initializing RAG pipeline...")
+        rag_pipeline = RAGPipeline(vector_store)
+        
+        print("✅ RAG system initialized successfully!")
+        print("=" * 60)
+        
     except Exception as e:
-        print(f"⚠️  Warning: Could not initialize RAG engine: {e}")
-        print("    Vector store may not be built yet. Run ingest.py first.")
+        print(f"❌ Error during startup: {e}")
+        print("   The API will start but /query endpoint will not work.")
+        print("   Please check your configuration and run ingest.py")
+        import traceback
+        traceback.print_exc()
 
 
-@app.get("/", response_model=HealthResponse)
-async def root():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "message": "Medical RAG System API is running",
-        "vector_store_loaded": rag_engine is not None
-    }
-
+# ============ API Endpoints ============
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Detailed health check."""
-    return {
-        "status": "healthy" if rag_engine else "degraded",
-        "message": "System operational" if rag_engine else "Vector store not loaded",
-        "vector_store_loaded": rag_engine is not None
-    }
+    """
+    Health check endpoint - returns 200 OK if service is running.
+    Required for Hack-A-Cure submission.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve the favicon"""
+    favicon_path = os.path.join(os.path.dirname(__file__), "favicon.svg")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path, media_type="image/svg+xml")
+    else:
+        raise HTTPException(status_code=404, detail="Favicon not found")
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
+async def query_endpoint(request: QueryRequest):
     """
-    Query the RAG system with a question.
+    Main RAG query endpoint.
     
-    - **question**: The question to ask
-    - **k**: Number of relevant documents to retrieve (default: 5)
+    **Required Format for Hack-A-Cure:**
+    - Request: {"query": "string", "top_k": 5}
+    - Response: {"answer": "string", "contexts": ["snippet1", "snippet2", ...]}
+    
+    **Rules:**
+    - Returns 200 OK on success only
+    - contexts must be array of plain strings
+    - Answer must be concise and based only on retrieved text
+    - If retrieval fails: answer = "Information not available in dataset."
     """
-    if not rag_engine:
-        raise HTTPException(
-            status_code=503,
-            detail="RAG engine not initialized. Please run ingest.py to build the vector store."
+    
+    # Check if RAG pipeline is initialized
+    if rag_pipeline is None:
+        return QueryResponse(
+            answer="Information not available in dataset.",
+            contexts=[]
         )
     
-    if not request.question or not request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    # Validate query
+    if not request.query or not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
     
     try:
-        result = rag_engine.query(request.question, k=request.k)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
-
-
-@app.get("/stats")
-async def get_stats():
-    """Get statistics about the vector store."""
-    if not rag_engine:
-        raise HTTPException(
-            status_code=503,
-            detail="RAG engine not initialized"
+        # Execute RAG pipeline
+        result = rag_pipeline.query(
+            question=request.query,
+            top_k=request.top_k
         )
-    
-    try:
-        num_vectors = rag_engine.vector_store.index.ntotal
-        return {
-            "total_documents": num_vectors,
-            "embedding_dimension": rag_engine.vector_store.embedding_dim,
-            "model_type": "local" if rag_engine.use_local_model else "openai"
-        }
+        
+        # Ensure result has required fields
+        if not isinstance(result, dict):
+            raise ValueError("Invalid pipeline result format")
+        
+        answer = result.get("answer", "Information not available in dataset.")
+        contexts = result.get("contexts", [])
+        
+        # Ensure contexts is a list of strings
+        if not isinstance(contexts, list):
+            contexts = []
+        
+        # Convert all contexts to strings
+        contexts = [str(ctx) for ctx in contexts]
+        
+        # Return in exact format required
+        return QueryResponse(
+            answer=answer,
+            contexts=contexts
+        )
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting stats: {str(e)}")
+        print(f"Error processing query: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Fail-safe: return graceful error as per requirements
+        return QueryResponse(
+            answer="Information not available in dataset.",
+            contexts=[]
+        )
 
+
+@app.get("/")
+async def root():
+    """Root endpoint - API information"""
+    return {
+        "name": "MedInSight - Medical RAG API",
+        "version": "1.0.0",
+        "description": "AI Textbook Medical Reasoning using RAG",
+        "submission": "Hack-A-Cure",
+        "endpoints": {
+            "health": "/health - Health check",
+            "query": "/query - Main RAG query endpoint"
+        },
+        "status": "ready" if rag_pipeline else "vector_store_not_loaded"
+    }
+
+
+# ============ Main Entry Point ============
 
 if __name__ == "__main__":
-    # Get port from environment variable (for Render deployment)
+    # Get port from environment variable (default: 8000 for local, 10000 for production)
     port = int(os.getenv("PORT", 8000))
+    
+    print(f"\n🌐 Starting server on http://0.0.0.0:{port}")
+    print(f"📖 API docs available at http://localhost:{port}/docs\n")
     
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
         port=port,
-        reload=False
+        reload=False,
+        log_level="info"
     )

@@ -11,10 +11,11 @@ venv/
 env/
 ENV/
 
-# Vector store data
-vector_store/
-*.faiss
-*.pkl
+# Vector store data (will be built during deployment)
+# Uncomment below if you want to commit pre-built vector store
+# vector_store/
+# *.faiss
+# *.pkl
 
 # IDE
 .vscode/
@@ -25,3 +26,6 @@ vector_store/
 # OS
 .DS_Store
 Thumbs.db
+
+# Large files (if you have PDFs, consider using Git LFS)
+# pdfs/*.pdf
