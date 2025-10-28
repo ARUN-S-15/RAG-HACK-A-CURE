@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+openai
+faiss-cpu
+PyMuPDF
+reportlab
+numpy
+pydantic
